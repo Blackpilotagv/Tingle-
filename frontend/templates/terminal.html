@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tingle Trade Terminal</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/terminal.css') }}">
+  <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+</head>
+<body>
+
+<!-- ══════════════════ TOP NAVIGATION BAR ══════════════════ -->
+<header class="topbar">
+  <div class="topbar-left">
+    <span class="brand">Tingle</span>
+    <div class="market-ticker">
+      <div class="ticker-item">
+        <span class="tick-name">NIFTY</span>
+        <span class="tick-val chg-up">22,776.10 ▲ +220.35 (+0.98%)</span>
+      </div>
+      <div class="ticker-item">
+        <span class="tick-name">SENSEX</span>
+        <span class="tick-val chg-up">73,067.81 ▲ +685.34 (+0.95%)</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="topbar-center">
+    <div class="search-wrap">
+      <select id="exchangeSel" onchange="document.getElementById('searchDropdown').classList.add('hidden')">
+        <option value="NSE">NSE</option>
+        <option value="BSE">BSE</option>
+        <option value="NFO">NFO</option>
+        <option value="MCX">MCX</option>
+      </select>
+      <input type="text" id="symbolSearch" placeholder="🔍 Search for Anything [Ctrl + S]" autocomplete="off">
+      <div id="searchDropdown" class="search-dropdown hidden"></div>
+    </div>
+  </div>
+
+  <div class="topbar-right">
+    <div class="account-nav-info" onclick="openPanel('broker')" title="Broker Account & Funds">
+      <div class="ani-item">
+        <span class="ani-label">Account:</span>
+        <span class="ani-val" id="navAccountName">{{ username }}</span>
+      </div>
+      <div class="ani-divider"></div>
+      <div class="ani-item">
+        <span class="ani-label">Balance:</span>
+        <span class="ani-val balance-green" id="navAccountBalance">₹0.00</span>
+      </div>
+    </div>
+    <div class="broker-badge" id="brokerBadge" onclick="openPanel('broker')" title="Broker Settings">
+      <span class="dot disconnected" id="brokerDot"></span>
+      <span id="brokerLabel">Disconnected</span>
+    </div>
+    <span class="user-avatar" title="{{ username }}">RS</span>
+    <a href="/logout" class="btn-icon" title="Logout">🚪</a>
+  </div>
+</header>
+
+<!-- ══════════════════ MAIN WORKSPACE LAYOUT ══════════════════ -->
+<div class="terminal-layout">
+
+  <!-- LEFT: Watchlist Panel -->
+  <aside class="panel-left">
+    <div class="watchlist-header">
+      <span class="panel-title">Watchlist</span>
+      <div class="wl-header-actions">
+        <button class="btn-icon-sm" onclick="openAddSymbol()" title="Add Symbol">+</button>
+      </div>
+    </div>
+    <div id="watchlistItems" class="watchlist-body"></div>
+    <div id="addSymbolBar" class="add-symbol-bar hidden">
+      <input type="text" id="newSymbol" placeholder="e.g. TCS" 
+             onkeydown="if(event.key==='Enter') addToWatchlist()">
+      <button class="btn-primary-sm" onclick="addToWatchlist()">Add</button>
+      <button class="btn-sm" onclick="closeAddSymbol()">✕</button>
+    </div>
+  </aside>
+
+  <!-- CENTER: Chart & Sub-Panels -->
+  <main class="panel-center">
+
+    <!-- Chart Top Toolbar -->
+    <div class="chart-toolbar">
+      <div class="ct-group">
+        <div class="tf-buttons">
+          <button class="tf-btn" data-tf="1m"  onclick="setTF('1m')">1m</button>
+          <button class="tf-btn active" data-tf="5m"  onclick="setTF('5m')">5m</button>
+          <button class="tf-btn" data-tf="15m" onclick="setTF('15m')">15m</button>
+          <button class="tf-btn" data-tf="1h"  onclick="setTF('1h')">1h</button>
+          <button class="tf-btn" data-tf="1d"  onclick="setTF('1d')">1d</button>
+        </div>
+        <div class="ct-divider"></div>
+        <button class="ct-btn" title="Candle Style">🕯️</button>
+        <button class="ct-btn" title="Indicators" onclick="toggleIndicatorMenu()">ƒx Indicators</button>
+      </div>
+
+      <div class="ct-group">
+        <button class="ct-btn" onclick="openPanel('broker')" title="Settings">⚙️</button>
+      </div>
+    </div>
+
+    <!-- Indicator menu toggles dropdown -->
+    <div class="indicator-toggles">
+      <label class="ind-pill"><input type="checkbox" id="togEMA20" onchange="toggleIndicator('EMA20')"> EMA20</label>
+      <label class="ind-pill"><input type="checkbox" id="togEMA50" onchange="toggleIndicator('EMA50')"> EMA50</label>
+      <label class="ind-pill"><input type="checkbox" id="togBB"    onchange="toggleIndicator('BB')"> BB</label>
+      <label class="ind-pill"><input type="checkbox" id="togRSI"   onchange="toggleIndicator('RSI')"> RSI</label>
+      <label class="ind-pill"><input type="checkbox" id="togMACD"  onchange="toggleIndicator('MACD')"> MACD</label>
+    </div>
+
+    <!-- Chart Main Working Area (Left Drawing Sidebar + Canvas) -->
+    <div class="chart-canvas-container">
+      
+      <!-- Left Vertical Drawing Toolbar -->
+      <div class="drawing-sidebar">
+        <button class="draw-btn active" title="Crosshair">┼</button>
+        <button class="draw-btn" title="Trendline">╱</button>
+        <button class="draw-btn" title="Fibonacci">≡</button>
+        <button class="draw-btn" title="Brush / Shapes">🖌️</button>
+        <button class="draw-btn" title="Text">T</button>
+        <button class="draw-btn" title="Icons / Emoji">😊</button>
+        <button class="draw-btn" title="Ruler">📏</button>
+        <button class="draw-btn" title="Zoom">🔍</button>
+        <button class="draw-btn" title="Magnet">🧲</button>
+        <button class="draw-btn" title="Lock All">🔒</button>
+        <button class="draw-btn" title="Remove Objects">🗑️</button>
+      </div>
+
+      <!-- Main Chart Display -->
+      <div class="chart-area">
+        <!-- Floating In-Chart Header Overlay -->
+        <div class="in-chart-header">
+          <div class="ich-info">
+            <span class="active-symbol" id="chartSymbol">IDEA</span>
+            <span class="ich-dot">•</span>
+            <span class="ich-tf" id="chartTimeframe">5</span>
+            <span class="ich-dot">•</span>
+            <span class="chart-exchange" id="chartExchange">NSE</span>
+            <span class="ohlc-header">
+              <span id="candleO">O13.21</span>
+              <span id="candleH">H13.21</span>
+              <span id="candleL">L13.21</span>
+              <span id="candleC">C13.21</span>
+              <span id="ltpChange" class="chg-up">+0.01 (+0.08%)</span>
+            </span>
+          </div>
+          <!-- Overlaid Quick Buy / Sell Pills -->
+          <div class="ich-trade-pills">
+            <button class="ich-buy-pill" onclick="setOrderSide('BUY'); placeOrderQuick('BUY')">
+              BUY @ <span id="buyPillPrice">13.21</span>
+            </button>
+            <input type="number" id="quickQty" value="1" min="1" class="ich-qty-input">
+            <button class="ich-sell-pill" onclick="setOrderSide('SELL'); placeOrderQuick('SELL')">
+              SELL @ <span id="sellPillPrice">13.21</span>
+            </button>
+          </div>
+        </div>
+
+        <div id="mainChart"></div>
+        
+        <div id="chartPlaceholder" class="chart-placeholder">
+          <div class="cp-inner">
+            <div class="cp-icon">📊</div>
+            <div class="cp-title">Select a symbol to view chart</div>
+            <div class="cp-sub">Search a symbol in the top bar or click one in your watchlist</div>
+          </div>
+        </div>
+        <div id="chartLoading" class="chart-loading hidden">
+          <div class="spinner"></div> Loading chart…
+        </div>
+        <div id="chartError" class="chart-error hidden"></div>
+      </div>
+    </div>
+
+    <!-- Chart Bottom Range Bar -->
+    <div class="chart-bottom-range">
+      <div class="range-presets">
+        <button class="range-btn" onclick="setTF('1d')">1D</button>
+        <button class="range-btn" onclick="setTF('5m')">5D</button>
+        <button class="range-btn" onclick="setTF('15m')">1M</button>
+        <button class="range-btn" onclick="setTF('1h')">3M</button>
+        <button class="range-btn" onclick="setTF('1h')">6M</button>
+        <button class="range-btn" onclick="setTF('1d')">1Y</button>
+        <button class="range-btn" onclick="setTF('1d')">5Y</button>
+      </div>
+      <div class="range-clock">
+        <span id="istClock">01:59:14 (UTC+5:30)</span>
+        <span>%</span>
+        <span>log</span>
+        <span>auto</span>
+      </div>
+    </div>
+
+    <div id="rsiChart"  class="sub-chart hidden"></div>
+    <div id="macdChart" class="sub-chart hidden"></div>
+
+  </main>
+
+  <!-- RIGHT VERTICAL SIDEBAR MENU -->
+  <aside class="right-icon-sidebar">
+    <button class="r-icon-btn" data-tab="order-ticket" onclick="toggleRightPanel('order-ticket')" title="Order Ticket">
+      <span class="rib-icon">🏧</span>
+      <span class="rib-text">Ticket</span>
+    </button>
+    <button class="r-icon-btn" data-tab="positions" onclick="toggleRightPanel('positions')" title="Positions">
+      <span class="rib-icon">📊</span>
+      <span class="rib-text">Positions</span>
+    </button>
+    <button class="r-icon-btn" data-tab="orders" onclick="toggleRightPanel('orders')" title="Orders">
+      <span class="rib-icon">📋</span>
+      <span class="rib-text">Orders</span>
+    </button>
+    <button class="r-icon-btn" data-tab="holdings" onclick="toggleRightPanel('holdings')" title="Holdings">
+      <span class="rib-icon">💼</span>
+      <span class="rib-text">Holdings</span>
+    </button>
+    <button class="r-icon-btn" data-tab="strategies" onclick="toggleRightPanel('strategies')" title="Strategies">
+      <span class="rib-icon">🧠</span>
+      <span class="rib-text">Strategies</span>
+    </button>
+    <button class="r-icon-btn" onclick="openPanel('broker')" title="More">
+      <span class="rib-icon">⋮</span>
+      <span class="rib-text">More</span>
+    </button>
+  </aside>
+
+  <!-- RIGHT EXPANDABLE SLIDING PANEL -->
+  <aside class="panel-right hidden" id="rightExpandedPanel">
+    <div class="panel-header">
+      <span id="rightPanelTitle">Positions</span>
+      <button onclick="closeRightPanel()" title="Close Panel">✕</button>
+    </div>
+
+    <!-- POSITIONS VIEW -->
+    <div id="rp-positions" class="rp-content hidden">
+      <div class="rp-actions">
+        <button class="btn-refresh" onclick="loadPositions()">↻ Refresh Positions</button>
+      </div>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Symbol</th>
+            <th>Qty</th>
+            <th>Avg</th>
+            <th>LTP</th>
+            <th>P&L</th>
+            <th>Product</th>
+          </tr>
+        </thead>
+        <tbody id="positionsBody">
+          <tr><td colspan="6" class="empty">Click Refresh to load positions</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ORDERS VIEW -->
+    <div id="rp-orders" class="rp-content hidden">
+      <div class="rp-actions">
+        <button class="btn-refresh" onclick="loadOrders()">↻ Refresh Orders</button>
+      </div>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Symbol</th>
+            <th>Type</th>
+            <th>Qty</th>
+            <th>Price</th>
+            <th>Status</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="ordersBody">
+          <tr><td colspan="7" class="empty">No orders today</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- HOLDINGS VIEW -->
+    <div id="rp-holdings" class="rp-content hidden">
+      <div class="rp-actions">
+        <button class="btn-refresh" onclick="loadHoldings()">↻ Refresh Holdings</button>
+      </div>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Symbol</th>
+            <th>Qty</th>
+            <th>Avg</th>
+            <th>LTP</th>
+            <th>P&L</th>
+            <th>P&L%</th>
+          </tr>
+        </thead>
+        <tbody id="holdingsBody">
+          <tr><td colspan="6" class="empty">Click Refresh to load holdings</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ORDER TICKET VIEW -->
+    <div id="rp-order-ticket" class="rp-content hidden">
+      <div class="order-header">
+        <div class="order-sym-wrap">
+          <span class="order-symbol" id="orderSymbol">–</span>
+          <span class="order-exch"   id="orderExchange">NSE</span>
+        </div>
+        <div class="ohlc-bar" id="ohlcBar"></div>
+        <div class="ltp-row">
+          <span class="ltp-val" id="ltpValue">₹–</span>
+          <span class="ltp-chg chg-flat" id="ltpChange">–</span>
+        </div>
+      </div>
+
+      <div class="order-form">
+        <div class="order-side-tabs">
+          <button class="otab buy-active" onclick="setOrderSide('BUY',this)">BUY</button>
+          <button class="otab"            onclick="setOrderSide('SELL',this)">SELL</button>
+        </div>
+
+        <label>Order Type</label>
+        <select id="orderType" onchange="togglePriceField()">
+          <option value="MARKET">MARKET</option>
+          <option value="LIMIT">LIMIT</option>
+          <option value="STOPLOSS_MARKET">SL-MARKET</option>
+          <option value="STOPLOSS_LIMIT">SL-LIMIT</option>
+        </select>
+
+        <label>Product</label>
+        <select id="productType">
+          <option value="INTRADAY">INTRADAY (MIS)</option>
+          <option value="DELIVERY">DELIVERY (CNC)</option>
+          <option value="CARRYFORWARD">CARRY FORWARD (NRML)</option>
+        </select>
+
+        <label>Quantity</label>
+        <input type="number" id="qty" value="1" min="1" oninput="calcRisk()">
+
+        <div id="priceRow" class="hidden">
+          <label>Price</label>
+          <input type="number" id="orderPrice" step="0.05" placeholder="0.00">
+        </div>
+
+        <div id="trigRow" class="hidden">
+          <label>Trigger Price</label>
+          <input type="number" id="trigPrice" step="0.05" placeholder="0.00">
+        </div>
+
+        <div class="risk-section">
+          <div class="risk-inputs">
+            <div class="ri-row">
+              <span>SL%</span>
+              <input type="number" id="riskSL" value="2" step="0.1" min="0.1" oninput="calcRisk()">
+            </div>
+            <div class="ri-row">
+              <span>Target%</span>
+              <input type="number" id="riskTP" value="4" step="0.1" min="0.1" oninput="calcRisk()">
+            </div>
+          </div>
+          <div id="riskOutput" class="risk-output"></div>
+        </div>
+
+        <button id="placeBtn" class="place-btn buy-btn" onclick="placeOrder()">
+          PLACE BUY
+        </button>
+
+        <div id="orderToast" class="order-toast hidden"></div>
+      </div>
+    </div>
+
+    <!-- STRATEGIES VIEW -->
+    <div id="rp-strategies" class="rp-content hidden">
+      <div id="strategiesList"></div>
+      <button class="btn-primary" style="margin-top:10px" onclick="openPanel('broker')">+ Strategy Settings</button>
+    </div>
+  </aside>
+</div>
+
+<!-- ══════════════════ BROKER OVERLAY ══════════════════ -->
+<div id="brokerOverlay" class="overlay hidden" onclick="if(event.target===this)closePanel('broker')">
+  <div class="overlay-card">
+    <div class="overlay-header">
+      <span>⚙ Angel One – Broker Connection</span>
+      <button onclick="closePanel('broker')">✕</button>
+    </div>
+    <div id="brokerStatus" class="broker-status-bar"></div>
+    <form onsubmit="connectBroker(event)" class="overlay-form">
+      <label>API Key <span class="hint">(from Angel One Developer Console)</span></label>
+      <input type="text" id="bApiKey" placeholder="e.g. abc123xyz…">
+
+      <label>Client ID <span class="hint">(your Angel One login ID)</span></label>
+      <input type="text" id="bClientId" placeholder="e.g. A123456">
+
+      <label>Password <span class="hint">(trading PIN / password)</span></label>
+      <input type="password" id="bPassword" placeholder="••••••••">
+
+      <label>TOTP Secret <span class="hint">(scan QR → get secret from Angel One)</span></label>
+      <input type="text" id="bTOTP" placeholder="26-character base32 secret">
+
+      <button type="submit" class="btn-primary" style="width:100%;margin-top:4px">Connect to Angel One</button>
+    </form>
+    <div style="padding:0 18px">
+      <button class="btn-danger" onclick="disconnectBroker()">Disconnect Session</button>
+    </div>
+    <div id="brokerMsg" class="msg-box" style="padding:10px 18px 16px"></div>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/terminal.js') }}"></script>
+</body>
+</html>
